@@ -1,7 +1,8 @@
 import { Request, Response } from "express";
 import { getPool } from "../config/db";
-import sql from "mssql";
+import sql, { pool } from "mssql";
 import type { CreateUserRequest, LoginRequest, User } from "../types/user";
+import bcrypt from "bcryptjs";
 
 
 export async function createUser(req: Request, res: Response) {
@@ -17,13 +18,14 @@ export async function createUser(req: Request, res: Response) {
 
   try {
     const pool = await getPool();
+    const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool
       .request()
       .input("name", sql.NVarChar, name)
       .input("lastName", sql.NVarChar, lastName)
       .input("email", sql.NVarChar, email)
-      .input("password", sql.NVarChar, password)
+      .input("password", sql.NVarChar, passwordHash)
       .query<User>(`
         INSERT INTO Users (Name, LastName, Email, Password)
         OUTPUT
@@ -68,15 +70,18 @@ export async function login(req: Request, res: Response) {
     const result = await pool
       .request()
       .input("email", sql.NVarChar, email)
-      .input("password", sql.NVarChar, password)
       .query<User>(`
-        SELECT Id, Name, LastName, Email
-        FROM Users
-        WHERE Email = @email AND Password = @password
+       SELECT Id, Name, LastName, Email, Password
+       FROM Users
+       WHERE Email = @email
       `);
 
+      const user = result.recordset[0];
+
     // Si no hay ninguna fila, las credenciales no coinciden con ningún usuario
-    if (result.recordset.length === 0) {
+    const isValid = user && (await bcrypt.compare(password, user.Password));
+
+    if (!isValid) {
       return res.status(401).json({
         code: "UNAUTHORIZED",
         message: "Correo o contraseña incorrectos",
@@ -84,7 +89,8 @@ export async function login(req: Request, res: Response) {
     }
 
     // Hay exactamente una fila (el Email es UNIQUE), esa es la cuenta
-    res.status(200).json(result.recordset[0]);
+    const { Password, ...safeUser } = user;
+    res.status(200).json(safeUser);
   } catch (error) {
     console.error("Error en login:", error);
     res.status(500).json({ code: "SERVER_ERROR", message: "Error al iniciar sesión" });
