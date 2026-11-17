@@ -10,7 +10,7 @@ export type Loan = {
   Amount: number;
   Installments: number;
   InstallmentValue: number;
-  Status: "approved" | "mora" | "paid";
+  Status: "pending" | "approved" | "rejected" | "mora" | "paid";
   CreatedAt: string;
 };
 

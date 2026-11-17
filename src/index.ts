@@ -4,6 +4,7 @@ import dotenv from "dotenv";
 import { getPool } from "./config/db";
 import userRoutes from "./routes/userRoutes";
 import loanRoutes from "./routes/loanRoutes";
+import adminRoutes from "./routes/adminRoutes";
 
 dotenv.config();
 
@@ -21,6 +22,7 @@ app.get("/", (req, res) => {
 // Todas las rutas de userRoutes quedan activas a partir de aquí
 app.use(userRoutes);
 app.use(loanRoutes);
+app.use(adminRoutes);
 
 const PORT = process.env.PORT || 3000;
 

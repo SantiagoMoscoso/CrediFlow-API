@@ -58,7 +58,7 @@ export async function createLoan(req: AuthRequest, res: Response) {
       .query<Loan>(`
         INSERT INTO Loans (UserId, Amount, Installments, InstallmentValue, Status)
         OUTPUT INSERTED.*
-        VALUES (@userId, @amount, @installments, @installmentValue, 'approved')
+        VALUES (@userId, @amount, @installments, @installmentValue, 'pending')
       `);
 
     // Se aprueba automáticamente al crearse, por eso 'approved' va fijo en el VALUES
@@ -97,6 +97,13 @@ export async function registerPayment(req: AuthRequest, res: Response) {
     }
 
     const loan = loanResult.recordset[0];
+
+    if (loan.Status !== "approved" && loan.Status !== "mora") {
+      return res.status(400).json({
+        code: "BAD_REQUEST",
+        message: "Este préstamo no admite pagos",
+      });
+    }
 
     // Sumar todos los pagos ya registrados para este préstamo.
     // SUM(Amount) es una función de SQL que suma esa columna para todas
