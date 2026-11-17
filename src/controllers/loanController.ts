@@ -2,14 +2,12 @@ import { Request, Response } from "express";
 import { getPool } from "../config/db";
 import sql from "mssql";
 import type { CreateLoanRequest, RegisterPaymentRequest, Loan, Payment } from "../types/loan";
+import { AuthRequest } from "../middlewares/auth";
 
-export async function createLoan(req: Request, res: Response) {
-  const { userId, amount, installments } = req.body as CreateLoanRequest;
-  
-
-  if (!userId) {
-    return res.status(400).json({ code: "BAD_REQUEST", message: "userId es obligatorio" });
-  }
+export async function createLoan(req: AuthRequest, res: Response) {
+  // userId ya no se lee del body: lo manda el token, que el cliente no puede falsificar
+  const { amount, installments } = req.body as CreateLoanRequest;
+  const userId = req.user!.id;
 
   // Regla de negocio 1: monto mayor a 0
   if (!amount || amount <= 0) {
@@ -71,7 +69,7 @@ export async function createLoan(req: Request, res: Response) {
   }
 }
 
-export async function registerPayment(req: Request, res: Response) {
+export async function registerPayment(req: AuthRequest, res: Response) {
   // req.params trae los valores que van en la URL misma
   const loanId = Number(req.params.id);
   const { amount } = req.body as RegisterPaymentRequest;
@@ -90,7 +88,8 @@ export async function registerPayment(req: Request, res: Response) {
     const loanResult = await pool
       .request()
       .input("loanId", sql.Int, loanId)
-      .query<Loan>("SELECT * FROM Loans WHERE Id = @loanId");
+      .input("userId", sql.Int, req.user!.id) // Aseguramos que el préstamo sea del usuario logueado
+      .query<Loan>("SELECT * FROM Loans WHERE Id = @loanId AND UserId = @userId");
 
     // Si no existe ningún préstamo con ese Id, mostrar error
     if (loanResult.recordset.length === 0) {
@@ -151,8 +150,14 @@ export async function registerPayment(req: Request, res: Response) {
     res.status(500).json({ code: "SERVER_ERROR", message: "Error al registrar el pago" });
   }
 }
-export async function getUserLoans(req: Request, res: Response) {
+export async function getUserLoans(req: AuthRequest, res: Response) {
   const userId = Number(req.params.id);
+
+  if (req.user!.id !== userId && req.user!.role !== "admin") {
+    return res.status(403).json({ 
+      code: "FORBIDDEN", message: "No tienes permiso para ver estos préstamos" 
+    });
+  }
 
   try {
     const pool = await getPool();

@@ -3,6 +3,7 @@ import { getPool } from "../config/db";
 import sql, { pool } from "mssql";
 import type { CreateUserRequest, LoginRequest, User } from "../types/user";
 import bcrypt from "bcryptjs";
+import { generateToken } from "../middlewares/auth";
 
 
 export async function createUser(req: Request, res: Response) {
@@ -18,6 +19,18 @@ export async function createUser(req: Request, res: Response) {
 
   try {
     const pool = await getPool();
+    
+    const existing = await pool
+    .request()
+    .input("email", sql.NVarChar, email)
+    .query("SELECT Id FROM Users WHERE Email = @email");
+
+    if (existing.recordset.length > 0) {
+      return res.status(409).json({
+        code: "CONFLICT",
+        message: "Ya existe una cuenta con ese correo",
+      });
+    }
     const passwordHash = await bcrypt.hash(password, 10);
 
     const result = await pool
@@ -26,22 +39,27 @@ export async function createUser(req: Request, res: Response) {
       .input("lastName", sql.NVarChar, lastName)
       .input("email", sql.NVarChar, email)
       .input("password", sql.NVarChar, passwordHash)
+      .input("role", sql.NVarChar, "cliente")
       .query<User>(`
-        INSERT INTO Users (Name, LastName, Email, Password)
+        INSERT INTO Users (Name, LastName, Email, Password, Role)
         OUTPUT
           INSERTED.Id,
           INSERTED.Name,
           INSERTED.LastName,
-          INSERTED.Email
+          INSERTED.Email,
+          INSERTED.Role
         VALUES (
           @name,
           @lastName,
           @email,
-          @password
+          @password,
+          @role
         )
       `);
 
-    return res.status(201).json(result.recordset[0]);
+      const newUser = result.recordset[0];
+      const token = generateToken(newUser.Id, newUser.Role);
+    return res.status(201).json({ user: newUser, token });
 
   } catch (error) {
     console.error("Error al crear usuario:", error);
@@ -71,7 +89,7 @@ export async function login(req: Request, res: Response) {
       .request()
       .input("email", sql.NVarChar, email)
       .query<User>(`
-       SELECT Id, Name, LastName, Email, Password
+       SELECT Id, Name, LastName, Email, Password, Role
        FROM Users
        WHERE Email = @email
       `);
@@ -90,7 +108,8 @@ export async function login(req: Request, res: Response) {
 
     // Hay exactamente una fila (el Email es UNIQUE), esa es la cuenta
     const { Password, ...safeUser } = user;
-    res.status(200).json(safeUser);
+    const token = generateToken(user.Id, user.Role);
+    res.status(200).json({ user: safeUser, token });
   } catch (error) {
     console.error("Error en login:", error);
     res.status(500).json({ code: "SERVER_ERROR", message: "Error al iniciar sesión" });

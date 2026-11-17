@@ -18,4 +18,5 @@ export type User = {
   LastName: string;
   Email: string;
   Password: string;
+  Role: "cliente" | "admin";
 };
